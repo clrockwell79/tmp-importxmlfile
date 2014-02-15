@@ -109,7 +109,7 @@ class listingsImport {
         // move the file
         $time = date('Y_M_d', time());
         $oldPath = pathinfo($filePath);
-        $newPath = $oldPath['dirname'] . $oldPath['filename'] . '_' . $time . '.' . $oldPath['extension'];
+        $newPath = $oldPath['dirname'] . "/" . $oldPath['filename'] . '_' . $time . '.' . $oldPath['extension'];
         rename($filePath, $newPath);
 
 
@@ -150,8 +150,11 @@ class listingsImport {
             
             $delete = $currentVins;
             $this->createListings($create);
+            print "Created " . count($create) . " listings";
             $this->updateListings($update);
+            print "Updated " . count($update) . " listings";
             $this->deleteListings($delete, $dealerSID);
+            print "Deleted " . count($create) . " listings";
         }        
 
     }
@@ -204,12 +207,13 @@ class listingsImport {
             $insert = $stmt->execute();
             $lastSID = $this->conn->lastInsertId('sid');
             if ($insert === false) { die(var_dump($this->conn->errorInfo(), true));}       
-            print "Created listing id {$lastSID}. Number {$i} of " . count($create) . "<br>";
+            //print "Created listing id {$lastSID}. Number {$i} of " . count($create) . "<br>";
             // handle images
             $imgCaption = $create[$i]['keywords'];
             $imageHandler = $this->getAndStoreListingImages($images, $lastSID, $imgCaption);
 
         }
+//die();
     }
 
     private function updateListings($update)
@@ -327,6 +331,7 @@ class listingsImport {
 
             // rename the file
             $permPic = 'picture_' . $lastId . $tmpExt;
+            rename($imgFolder . $tmpName . $tmpExt, $imgFolder . $permPic);
             $thumb = 'thumb_' . $lastId . $tmpExt;
             
             // create the thumb            
@@ -351,6 +356,7 @@ class listingsImport {
      * From http://stackoverflow.com/questions/747101/resize-crop-pad-a-picture-to-a-fixed-size
      */
     private function thumbnailBox($img, $box_w, $box_h, $dest, $folder) {
+       // var_dump($img, $dest, $folder);
         //create the image, of the required size
         $new = imagecreatetruecolor($box_w, $box_h);
         if($new === false) {
@@ -404,6 +410,7 @@ class listingsImport {
             imagedestroy($new);
             return null;
         }
+        imagejpeg($new, $folder . $dest);
             
         //copy successful
         return $new;
@@ -756,7 +763,10 @@ class listingsImport {
     }
     protected function getListingState($listing)
     {
-        return $listing['State'];
+        $state = $this->getState($listing['State']);
+        $return = $this->searchFieldList($state, 199);
+
+        return $this->getSID($return);
     }
     protected function getListingCity($listing)
     {
@@ -930,6 +940,70 @@ class listingsImport {
         return $return;
     }
 
+    private function getState($state) {
+
+        $states = array(
+            'Alabama' => 'AL',
+            'Alaska' => 'AK',
+            'Arizona' => 'AZ',
+            'Arkansas' => 'AR',
+            'California' => 'CA',
+            'Colorado' => 'CO',
+            'Connecticut' => 'CT',
+            'Delaware' => 'DE',
+            'Florida' => 'FL',
+            'Georgia' => 'GA',
+            'Hawaii' => 'HI',
+            'Idaho' => 'ID',
+            'Illinois' => 'IL',
+            'Indiana' => 'IN',
+            'Iowa' => 'IA',
+            'Kansas' => 'KS',
+            'Kentucky' => 'KY',
+            'Louisiana' => 'LA',
+            'Maine' => 'ME',
+            'Maryland' => 'MD',
+            'Massachusetts' => 'MA',
+            'Michigan' => 'MI',
+            'Minnesota' => 'MN',
+            'Mississippi' => 'MS',
+            'Missouri' => 'MO',
+            'Montana' => 'MT',
+            'Nebraska' => 'NE',
+            'Nevada' => 'NV',
+            'New Hampshire' => 'NH',
+            'New Jersey' => 'NJ',
+            'New Mexico' => 'NM',
+            'New York' => 'NY',
+            'North Carolina' => 'NC',
+            'North Dakota' => 'ND',
+            'Ohio' => 'OH',
+            'Oklahoma' => 'OK',
+            'Oregon' => 'OR',
+            'Pennsylvania' => 'PA',
+            'Rhode Island' => 'RI',
+            'South Carolina' => 'SC',
+            'South Dakota' => 'SD',
+            'Tennessee' => 'TN',
+            'Texas' => 'TX',
+            'Utah' => 'UT',
+            'Vermont' => 'VT',
+            'Virginia' => 'VA',
+            'Washington' => 'WA',
+            'West Virginia' => 'WV',
+            'Wisconsin' => 'WI',
+            'Wyoming' => 'WY'
+        );
+
+        foreach ($states as $k => $v)
+        {
+            if ($state == $k || $state == $v)
+            {
+                return $k;
+            }
+        }
+    }
+
     /**
      * @todo  this isn't necessary except for debugging
      */
@@ -957,4 +1031,3 @@ class dealerCarSearchListingsImport extends listingsImport {
 
 $test = new dealerCarSearchListingsImport;
 $test->importFile('./Cardealer/DCS_Autoz4Sell.xml');
-
