@@ -65,7 +65,7 @@ class listingsImport {
         $this->conn = null;
 
         // move the file
-        if ($moveLocalFile)
+        if ($this->moveLocalFile)
         {
             $time = date('Y_M_d', time());
             $oldPath = pathinfo($this->importFile);
@@ -373,6 +373,11 @@ class listingsImport {
             $tmpExt = substr($tmpImg, strrpos($tmpImg, '.'));
             $imgLocation = $imgFolder . $tmpName . $tmpExt;
             $copy = copy($images[$i], $imgLocation);
+            if (!$copy) 
+            {
+                $this->generalErrors[] = "Tried to get " . $images[$i] . " for vehicle listing {$lastSID} but an error was returned by the server.  
+                We will *not* try to get this image again";
+            }
             // handleImageErrors() for what we do with this
             if ($copy && filesize($imgLocation) == 0)
             {
@@ -398,7 +403,7 @@ class listingsImport {
 
             // rename the file
             $permPic = 'picture_' . $lastId . $tmpExt;
-            rename($imgFolder . $tmpName . $tmpExt, $imgFolder . $permPic);
+            rename($imgLocation, $imgFolder . $permPic);
             $thumb = 'thumb_' . $lastId . $tmpExt;
             
             // create the thumb            
