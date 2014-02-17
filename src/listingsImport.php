@@ -377,6 +377,7 @@ class listingsImport {
             {
                 $this->generalErrors[] = "Tried to get " . $images[$i] . " for vehicle listing {$lastSID} but an error was returned by the server.  
                 We will *not* try to get this image again";
+                continue;
             }
             // handleImageErrors() for what we do with this
             if ($copy && filesize($imgLocation) == 0)
