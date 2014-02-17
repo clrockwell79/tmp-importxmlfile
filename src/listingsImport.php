@@ -145,7 +145,6 @@ class listingsImport {
             $images = $this->imageErrors;
             $this->imageErrors = array();
             // @todo remove this for production
-            print "<h1> Found: " . count($images) . " with errors</h1><br>";
             foreach ($images as $image) {
                 call_user_func_array(array($this, 'getAndStoreListingImages'), $image);
             }
@@ -1105,9 +1104,3 @@ class dealerCarSearchListingsImport extends listingsImport {
     }
 
 }
-
-
-// $test = new dealerCarSearchListingsImport;
-// $file = '/home/autozsel/public_html/Cardealer/DCS_Autoz4Sell.xml';
-// chmod($file, 0755);
-// $test->importFile($file);
