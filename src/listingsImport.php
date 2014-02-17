@@ -11,6 +11,15 @@
 
 class listingsImport {
     
+    public $moveLocalFile = true;
+
+    public $generalLog = array();
+
+    public $generalErrors = array();
+
+    public $imageErrors = array();
+
+    private $importFile;
     /**
      * @var object hold pdo connection
      */
@@ -54,6 +63,16 @@ class listingsImport {
     {
         // hmmm, does this release the connection?
         $this->conn = null;
+
+        // move the file
+        if ($moveLocalFile)
+        {
+            $time = date('Y_M_d', time());
+            $oldPath = pathinfo($this->importFile);
+            $newPath = $oldPath['dirname'] . "/" . $oldPath['filename'] . '_' . $time . '.' . $oldPath['extension'];
+            rename($filePath, $newPath);
+        }
+        
     }
 
     /**
@@ -96,7 +115,7 @@ class listingsImport {
      */
     public function importFile($filePath)
     {
-
+        $this->importFile = $filePath;
         $xml = simplexml_load_file($filePath);
         
         // make it into a nice array
@@ -106,12 +125,32 @@ class listingsImport {
 
         $this->listingsCreateUpdateDelete();
 
-        // move the file
-        $time = date('Y_M_d', time());
-        $oldPath = pathinfo($filePath);
-        $newPath = $oldPath['dirname'] . "/" . $oldPath['filename'] . '_' . $time . '.' . $oldPath['extension'];
-        rename($filePath, $newPath);
+        if (!empty($this->imageErrors))
+        {
+            $this->handleImageErrors();
+        }
 
+    }
+
+
+    /**
+     * So there is an issue with copy intermittently not getting
+     * the images.  This will continue to try to retrieve the images
+     * until there are no more errors
+     */
+    private function handleImageErrors()
+    {
+        do 
+        {
+            $images = $this->imageErrors;
+            $this->imageErrors = array();
+            // @todo remove this for production
+            print "<h1> Found: " . count($images) . " with errors</h1><br>";
+            foreach ($images as $image) {
+                call_user_func_array(array($this, 'getAndStoreListingImages'), $image);
+            }
+        }
+        while (!empty($this->imageErrors));
 
     }
 
@@ -149,12 +188,19 @@ class listingsImport {
             // everything in $currentVins is in db under this user, but not in feed, so we delete
             
             $delete = $currentVins;
+            
             $this->createListings($create);
-            print "Created " . count($create) . " listings";
+            $this->generalLog[] = "Created " . count($create) . " listings";
+            
             $this->updateListings($update);
-            print "Updated " . count($update) . " listings";
+            $this->generalLog[] = "Updated " . count($update) . " listings";
+
             $this->deleteListings($delete, $dealerSID);
-            print "Deleted " . count($create) . " listings";
+            $this->generalLog[] = "Deleted " . count($delete) . " listings";
+
+            
+            
+            
         }        
 
     }
@@ -232,6 +278,7 @@ class listingsImport {
 
             $vin = $update[$i]['Vin'];
             $user_sid = $update[$i]['user_sid'];
+            $images = $update[$i]['Images'];
             unset($update[$i]['Vin'], $update[$i]['user_sid'], $update[$i]['Images']);
             $updateStmt = array();
             $paramArr = array();
@@ -256,7 +303,16 @@ class listingsImport {
             
             $runUpdate = $stmt->execute();
 
-            if ($runUpdate === false) { die(var_dump($this->conn->errorInfo(), true));}       
+            if ($runUpdate === false) { die(var_dump($this->conn->errorInfo(), true));}  
+            // handle images
+            // $imgCaption = $update[$i]['keywords'];
+            // $_sidSQL = $this->conn->prepare("SELECT sid FROM `classifieds_listings` WHERE Vin = :vin AND user_sid = :user_sid");
+            // $_sidSQL->bindParam(':vin', $vin);
+            // $_sidSQL->bindParam(':user_sid', $user_sid);
+            // $sel = $_sidSQL->execute();
+            // $sid = $sel->fetch();            
+            // $lastSID = $lastSID;
+            // $imageHandler = $this->getAndStoreListingImages($images, $lastSID, $imgCaption);     
         }
     }
 
@@ -315,8 +371,19 @@ class listingsImport {
             $tmpImg = $images[$i];
             $tmpName .= $i;
             $tmpExt = substr($tmpImg, strrpos($tmpImg, '.'));
-            
-            $copy = copy($images[$i], $imgFolder . $tmpName . $tmpExt);
+            $imgLocation = $imgFolder . $tmpName . $tmpExt;
+            $copy = copy($images[$i], $imgLocation);
+            // handleImageErrors() for what we do with this
+            if ($copy && filesize($imgLocation) == 0)
+            {
+                $this->imageErrors[] = array(
+                    array($images[$i]),
+                    $lastSID,
+                    $imageCaption
+                );
+                unlink($imgLocation);
+                continue;
+            }
             
             $sql = "INSERT INTO `classifieds_listings_pictures` (`listing_sid`,`storage_method`,`order`,`caption`)";
             $sql .= " VALUES (:list_sid, :storage_method, :order, :caption)";
@@ -790,6 +857,11 @@ class listingsImport {
     protected function getListingMakeModel($listing)
     {
         $return = $this->searchFieldList($listing['Model'], null, $this->makeAndModelList);
+        if (is_null($return))
+        {
+            $this->generalErrors[] = 'Make/Model Error: nothing found for ' . $listing['Model'] 
+                . ' on vehicle identified by VIN: ' . $listing['VIN'];
+        }
         return $return;
     }
     protected function getListingPrice($listing)
@@ -1029,5 +1101,7 @@ class dealerCarSearchListingsImport extends listingsImport {
 }
 
 
-$test = new dealerCarSearchListingsImport;
-$test->importFile('./Cardealer/DCS_Autoz4Sell.xml');
+// $test = new dealerCarSearchListingsImport;
+// $file = '/home/autozsel/public_html/Cardealer/DCS_Autoz4Sell.xml';
+// chmod($file, 0755);
+// $test->importFile($file);
