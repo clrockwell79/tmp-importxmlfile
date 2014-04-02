@@ -70,7 +70,7 @@ class listingsImport {
             $time = date('Y_M_d', time());
             $oldPath = pathinfo($this->importFile);
             $newPath = $oldPath['dirname'] . "/" . $oldPath['filename'] . '_' . $time . '.' . $oldPath['extension'];
-            rename($filePath, $newPath);
+            rename($this->importFile, $newPath);
         }
         
     }
@@ -140,16 +140,19 @@ class listingsImport {
      */
     private function handleImageErrors()
     {
+        $int = 0;
         do 
         {
+            var_dump($int);
             $images = $this->imageErrors;
             $this->imageErrors = array();
             // @todo remove this for production
             foreach ($images as $image) {
                 call_user_func_array(array($this, 'getAndStoreListingImages'), $image);
             }
+            $int++;
         }
-        while (!empty($this->imageErrors));
+        while (!empty($this->imageErrors) && $int <= 5 );
 
     }
 
@@ -191,7 +194,7 @@ class listingsImport {
             $this->createListings($create);
             $this->generalLog[] = "Created " . count($create) . " listings";
             
-            $this->updateListings($update);
+            $this->updateListings($update, $currentDealerListings);
             $this->generalLog[] = "Updated " . count($update) . " listings";
 
             $this->deleteListings($delete, $dealerSID);
@@ -261,7 +264,8 @@ class listingsImport {
 //die();
     }
 
-    private function updateListings($update)
+
+    private function updateListings($update, $currentDealerListings)
     {
 
         for ($i = 0; $i < count($update); $i++)
@@ -274,10 +278,12 @@ class listingsImport {
                 }
                 // @todo, do we need to serialize in case?
             }
-
             $vin = $update[$i]['Vin'];
+            $picture_count = $currentDealerListings[$vin]['picture_count'];
+            $sid = $currentDealerListings[$vin]['sid'];
             $user_sid = $update[$i]['user_sid'];
             $images = $update[$i]['Images'];
+            
             unset($update[$i]['Vin'], $update[$i]['user_sid'], $update[$i]['Images']);
             $updateStmt = array();
             $paramArr = array();
@@ -302,7 +308,14 @@ class listingsImport {
             
             $runUpdate = $stmt->execute();
 
-            if ($runUpdate === false) { die(var_dump($this->conn->errorInfo(), true));}  
+            if ($runUpdate === false) { die(var_dump($this->conn->errorInfo(), true));} 
+
+            if ($picture_count <= 1 && !is_null($images)) {
+                $this->generalLog[] = "{$vin} did not have images in the last sync, but does now; I'll try to get them";
+                //var_dump($this->generalLog);
+                $imgCaption = $update[$i]['keywords'];
+                $imageHandler = $this->getAndStoreListingImages($images, $sid, $imgCaption);
+            }
             // handle images
             // $imgCaption = $update[$i]['keywords'];
             // $_sidSQL = $this->conn->prepare("SELECT sid FROM `classifieds_listings` WHERE Vin = :vin AND user_sid = :user_sid");
@@ -365,6 +378,7 @@ class listingsImport {
         $imgFolder = $this->imageFolder;
         //$imgFolder = './';
         $tmpName = 'tmpImage';
+        $picCountReset = false;
         for($i = 0; $i < count($images); $i++)
         {
             $tmpImg = $images[$i];
@@ -372,15 +386,22 @@ class listingsImport {
             $tmpExt = substr($tmpImg, strrpos($tmpImg, '.'));
             $imgLocation = $imgFolder . $tmpName . $tmpExt;
             $copy = copy($images[$i], $imgLocation);
+            
             if (!$copy) 
             {
                 $this->generalErrors[] = "Tried to get " . $images[$i] . " for vehicle listing {$lastSID} but an error was returned by the server.  
-                We will *not* try to get this image again";
+                We will try to get the image again";
+                if (!$picCountReset) {
+                  $this->resetPictureCount($lastSID);
+                  $picCountReset = true;
+                }
+                
                 continue;
             }
             // handleImageErrors() for what we do with this
             if ($copy && filesize($imgLocation) == 0)
             {
+
                 $this->imageErrors[] = array(
                     array($images[$i]),
                     $lastSID,
@@ -422,6 +443,18 @@ class listingsImport {
             $update = $stmt->execute();
 
         }
+    }
+
+    /**
+     * Reset the picture count when retrieving pictures was unsuccessful
+     * So that it tries again on the next sync
+     */
+    private function resetPictureCount($sid)
+    {
+        $sql = "UPDATE `classifieds_listings` SET pictures = 0 WHERE sid = :sid";
+        $stmt = $this->conn->prepare($sql);
+        $stmt->bindParam(':sid', $sid);
+        $stmt->execute();
     }
 
     /**
@@ -491,7 +524,7 @@ class listingsImport {
     private function getCurrentDealerListings($userId = null)
     {
         $results = array();
-        $stmt = "SELECT sid, user_sid, Vin FROM classifieds_listings";
+        $stmt = "SELECT sid, user_sid, Vin, pictures FROM classifieds_listings";
         if (!is_null($userId))
         {
             $stmt .= " WHERE user_sid = :user_sid";
@@ -507,6 +540,7 @@ class listingsImport {
         while ($row = $query->fetch(PDO::FETCH_ASSOC)) {
             $results[$row['Vin']]['sid'] = $row['sid'];
             $results[$row['Vin']]['user_sid'] = $row['user_sid'];
+            $results[$row['Vin']]['picture_count'] = (int)$row['pictures'];
         }
 
         return $results;
@@ -718,7 +752,8 @@ class listingsImport {
     private function mapDealerNumberToUserSID($dealerNumber)
     {
         $dealerMap = array(
-            '5555' => 220
+            '5555' => 220, // Globe
+            '1123' => 221 // Craig & Landreth
         );
 
         return $dealerMap[$dealerNumber];
@@ -946,12 +981,13 @@ class listingsImport {
     }
     protected function getListingPicturesCount($listing)
     {
+        
         if (is_array($listing['Images'])) 
         {
-            // if a field is empty it is sent as an array
-            $listing['Images'] = '';
+            return (int)0;
         }
         $images = explode(',', $listing['Images']);
+        
         return count($images);
     }
     /**
@@ -1103,4 +1139,32 @@ class dealerCarSearchListingsImport extends listingsImport {
         // @todo meh, not sure anything else will need to be done here
     }
 
+}
+
+$test = new dealerCarSearchListingsImport;
+$file = '/home/autozsel/public_html/Cardealer/DCS_Autoz4Sell.xml';
+
+
+//$file = 'DCS_Autoz4Sell.xml';
+//$test->moveLocalFile = false; // useful for debugging
+
+chmod($file, 0755);
+$test->importFile($file);
+
+
+
+print "Logging Information";
+print "---------------------------------------------------" . PHP_EOL;
+print "/----------                   ---------------------" . PHP_EOL;
+print " ----------    General Log    ---------------------" . PHP_EOL;
+print "/----------                   ---------------------" . PHP_EOL;
+foreach ($test->generalLog as $log) {
+	print "{$log}" . PHP_EOL;
+}
+print "--------------------------------------------------" . PHP_EOL;
+print "/----------                -----------------------" . PHP_EOL;
+print " ----------   Error Log    -----------------------" . PHP_EOL;
+print "/----------                -----------------------" . PHP_EOL;
+foreach ($test->generalErrors as $error) {
+	print "{$error}" . PHP_EOL;
 }
