@@ -250,11 +250,17 @@ class listingsImport {
                 $stmt->bindValue($k, $v);
             }
             // @todo move to logging 
-            if ($stmt === false) { die(var_dump($this->conn->errorInfo(), true)); }
+            if ($stmt === false) { 
+                print __LINE__;
+                die(var_dump($this->conn->errorInfo(), true)); 
+            }
             
             $insert = $stmt->execute();
             $lastSID = $this->conn->lastInsertId('sid');
-            if ($insert === false) { die(var_dump($this->conn->errorInfo(), true));}       
+            if ($insert === false) { 
+                print __LINE__;
+                die(var_dump($this->conn->errorInfo(), true));
+            }       
             //print "Created listing id {$lastSID}. Number {$i} of " . count($create) . "<br>";
             // handle images
             $imgCaption = $create[$i]['keywords'];
@@ -304,11 +310,17 @@ class listingsImport {
             $stmt->bindParam(':user_sid', $user_sid);
 
             // @todo move to logging 
-            if ($stmt === false) { die(var_dump($this->conn->errorInfo(), true)); }
+            if ($stmt === false) { 
+                print __LINE__;
+                die(var_dump($this->conn->errorInfo(), true)); 
+            }
             
             $runUpdate = $stmt->execute();
 
-            if ($runUpdate === false) { die(var_dump($this->conn->errorInfo(), true));} 
+            if ($runUpdate === false) { 
+                    print __LINE__;
+                    die(var_dump($this->conn->errorInfo(), true));
+                } 
 
             if ($picture_count <= 1 && !is_null($images)) {
                 $this->generalLog[] = "{$vin} did not have images in the last sync, but does now; I'll try to get them";
@@ -751,12 +763,18 @@ class listingsImport {
        */
     private function mapDealerNumberToUserSID($dealerNumber)
     {
-        $dealerMap = array(
+        $qry = "select users_users_id from dealers_users where dealer = :dealer LIMIT 1";
+        $select = $this->conn->prepare($qry);
+        $select->bindParam(':dealer', $dealerNumber);
+        $select->execute();
+        $return = $select->fetch();
+        return $return['users_users_id'];
+        /*$dealerMap = array(
             '5555' => 220, // Globe
             '1123' => 221 // Craig & Landreth
         );
 
-        return $dealerMap[$dealerNumber];
+        return $dealerMap[$dealerNumber];*/
     }
 
     /** 
@@ -1142,8 +1160,11 @@ class dealerCarSearchListingsImport extends listingsImport {
 }
 
 $test = new dealerCarSearchListingsImport;
-$file = '/home/autozsel/public_html/Cardealer/DCS_Autoz4Sell.xml';
-
+$file = '/var/www/autozsel/Cardealer/DCS_Autoz4Sell.xml';
+if (!file_exists($file)) {
+    //die("the file doesn't exist");
+    print 'The file doesn\'t exist' . PHP_EOL;
+}
 
 //$file = 'DCS_Autoz4Sell.xml';
 //$test->moveLocalFile = false; // useful for debugging
@@ -1153,7 +1174,7 @@ $test->importFile($file);
 
 
 
-print "Logging Information";
+print "Logging Information for " . date('F j');
 print "---------------------------------------------------" . PHP_EOL;
 print "/----------                   ---------------------" . PHP_EOL;
 print " ----------    General Log    ---------------------" . PHP_EOL;
